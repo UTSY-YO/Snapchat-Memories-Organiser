@@ -68,26 +68,48 @@ No installation required — it runs directly from the script.
 
 ## How to Use
 
-### Step 1 — Request your Snapchat data
-1. Go to [accounts.snapchat.com](https://accounts.snapchat.com)
-2. Sign in → **My Data** → **Export your Memories**
-3. Tick **"Export JSON Files for data portability purposes"**
-4. Submit — Snapchat will email you a download link
-5. Download **all ZIP files** provided (there may be up to 12)
+### Part 1 — Downloading Your Data from Snapchat
 
-### Step 2 — Put all ZIPs in one folder
-Create a new folder (e.g. `Snapchat ZIPs` on your Desktop) and move all downloaded ZIPs into it. **Do not extract them.**
+> ⏳ Snapchat can take **up to 24 hours** to prepare your export. Do this first and come back once the email arrives.
 
-### Step 3 — Open the app and go to the Files tab
+**Step 1 — Request your export**
+1. Go to [accounts.snapchat.com](https://accounts.snapchat.com) and sign in, then click **My Data**
+2. Under *Select data to include*, tick **both** of the following:
+   - ✅ **Export your Memories**
+   - ✅ **Export JSON Files** *(for data portability purposes)*
+3. Click **Next**
+4. You will be prompted to select a **date range** — choose **All Time** so every memory is included
+5. **Confirm your email address** in the field provided
+6. Click **Submit**
+
+**Step 2 — Wait for the email**
+
+Snapchat will send an email from *Team Snapchat* with the subject **"Your Snapchat data is ready for download"**. Click the link inside — it will direct you back to [accounts.snapchat.com](https://accounts.snapchat.com) → **My Data**.
+
+**Step 3 — Download all ZIP files**
+1. Under **Your exports**, click **See exports**
+2. You will see a list of ZIP files (e.g. `mydata~....zip`, `mydata~...-2.zip`, up to 12 files, each up to 2 GB)
+3. Download **every ZIP file** to your **Downloads** folder
+4. Once all ZIPs are downloaded, create a new folder (e.g. `Snapchat ZIPs` on your Desktop) and move all the ZIPs into it — **do not extract them**
+
+> 💡 Make sure you have enough free disk space before downloading. The full export can exceed 20 GB.
+
+---
+
+### Part 2 — Processing with the App
+
+**Step 4 — Open the app and go to the Files tab**
 - Click **Add a folder of ZIPs** and select your ZIPs folder
-- Choose an output folder where organised memories will be saved
+- Choose an output folder where your organised memories will be saved
 - Adjust options if needed (overlays, ffmpeg timeout)
 - Click **Process All ZIPs**
 
-### Step 4 — Wait for processing
+**Step 5 — Wait for processing**
+
 Switch to the **Progress tab** to monitor live stats, progress bars, and ETA. Use the **Skip** button to jump past any video taking too long.
 
-### Step 5 — Import your memories
+**Step 6 — Import your memories**
+
 Your output folder contains properly restored media — import into Apple Photos, Google Photos, Android galleries, NAS storage, or anywhere you choose.
 
 ---
