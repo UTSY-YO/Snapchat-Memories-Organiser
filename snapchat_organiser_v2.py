@@ -1,7 +1,7 @@
 """
 Snapchat Memories Organiser v2.0
 =================================
-Made by UTSY-YO  |  https://github.com/UTSY-YO  |  April 2026
+Made by UTSY-YO  |  https://github.com/UTSY-YO  |  2026
 
 Matching strategy:
   1. Pre-scan all ZIPs for memories_history.json (master — ZIP 1 only).
@@ -45,7 +45,7 @@ APP_NAME    = "Snapchat Memories Organiser"
 APP_VERSION = "v2.0"
 APP_AUTHOR  = "UTSY-YO"
 APP_GITHUB  = "https://github.com/UTSY-YO"
-APP_DATE    = "April 2026"
+APP_DATE    = "2026"
 
 
 # ── App icon (base64-encoded PNG) ────────────────────────────────────────────
@@ -597,13 +597,13 @@ def embed_gps_video(path, lat, lon, dt_utc, warn_fn):
 
 # ── Pre-scan: find JSON before processing ─────────────────────────────────────
 
-def find_json_in_queue(queue, log, warn):
+def find_json_in_queue(sources, log, warn):
     """
     Scan all ZIPs for memories_history.json before touching any media.
     Returns (entry_list, by_datetime_dict) or ([], {}).
     by_datetime_dict lets us look up GPS by exact UTC datetime string.
     """
-    for src_path in queue:
+    for src_path in sources:
         try:
             with MediaSource(src_path) as src:
                 json_name = src.find_json()
@@ -655,7 +655,7 @@ def process_zip(source_path, out_dir, json_by_dt,
 
         if total == 0:
             warn(f"No Snapchat media found in {Path(source_path).name}.")
-            return 0, 0, 0, 0, 0, []
+            return 0, 0, 0, 0, []
 
         # ── Parse this ZIP's own HTML ─────────────────────────────────────
         # The HTML lists main files by UUID filename in document order.
@@ -747,7 +747,6 @@ def process_zip(source_path, out_dir, json_by_dt,
 
                 raw_dt     = None
                 json_entry = None
-                match_src  = "none"
                 uuid_upper = uuid.upper()
 
                 if html_uuid_to_pos and uuid_upper in html_uuid_to_pos:
@@ -755,9 +754,6 @@ def process_zip(source_path, out_dir, json_by_dt,
                     if pos < len(zip_json_entries):
                         json_entry = zip_json_entries[pos]
                         raw_dt     = json_entry["date"]
-                        match_src  = "html+json"
-                    else:
-                        match_src = "html-out-of-range"
                 elif json_by_dt:
                     json_type  = "video" if is_video else "image"
                     day_key    = (file_date, json_type)
@@ -767,13 +763,12 @@ def process_zip(source_path, out_dir, json_by_dt,
                     if pos < len(candidates):
                         json_entry = candidates[pos]
                         raw_dt     = json_entry["date"]
-                        match_src  = "positional"
 
                 # ── Step 2: Resolve datetime ──────────────────────────────
                 # Use exact time from JSON if available, else date at midnight
                 use_dt = raw_dt if raw_dt is not None else parse_dt(file_date)
                 if use_dt is None:
-                    use_dt = datetime.utcnow()
+                    use_dt = datetime.now(timezone.utc).replace(tzinfo=None)
 
                 # ── Step 3: Output filename ───────────────────────────────
                 dest = safe_dest(
@@ -811,20 +806,34 @@ def process_zip(source_path, out_dir, json_by_dt,
                                       else "ffmpeg timed out or errored")
                             if kill_flag: kill_flag.clear()
 
-                            # Reset skip button immediately and log it
                             if was_skipped:
                                 if on_skip_reset:
                                     on_skip_reset()
                                 log("  Skip complete — ready to skip the next video if needed.",
                                     "dim")
-
-                            failed.append({
-                                "reason":     reason,
-                                "dest":       dest.name,
-                                "source":     main_name,
-                                "overlay":    overlay_name,
-                                "json_entry": json_entry,
-                            })
+                                # Count as skipped in GUI tally, not saved
+                                skipped += 1
+                                if on_file_done:
+                                    on_file_done(saved=0, overlay=0, gps=0, skipped=1,
+                                                 year=use_dt.year, month=use_dt.month,
+                                                 is_video=is_video)
+                                failed.append({
+                                    "reason":     reason,
+                                    "dest":       dest.name,
+                                    "source":     main_name,
+                                    "overlay":    overlay_name,
+                                    "json_entry": json_entry,
+                                })
+                                tmp_main.unlink(missing_ok=True)
+                                continue   # skip the rest of this file's steps
+                            else:
+                                failed.append({
+                                    "reason":     reason,
+                                    "dest":       dest.name,
+                                    "source":     main_name,
+                                    "overlay":    overlay_name,
+                                    "json_entry": json_entry,
+                                })
 
                         log(f"  [{i}/{total}]  {dest.name}  — "
                             f"{'overlay applied' if did_overlay else 'saved without overlay'}")
@@ -907,11 +916,15 @@ ERR_C   = "#f85149"
 INFO_C  = "#58a6ff"
 BLUE    = "#1f6feb"
 
-FONT   = ("Segoe UI", 10)
-FONT_B = ("Segoe UI", 10, "bold")
-FONT_S = ("Segoe UI", 9)
-FONT_L = ("Segoe UI", 13, "bold")
-MONO   = ("Consolas", 9)
+# Platform-aware fonts
+_F      = "Segoe UI"   if _IS_WIN else ("SF Pro Display" if _IS_MAC else "Ubuntu")
+_F_MONO = "Consolas"   if _IS_WIN else ("SF Mono"        if _IS_MAC else "Ubuntu Mono")
+
+FONT   = (_F, 10)
+FONT_B = (_F, 10, "bold")
+FONT_S = (_F, 9)
+FONT_L = (_F, 13, "bold")
+MONO   = (_F_MONO, 9)
 
 
 def _card(parent, **kw):
@@ -927,7 +940,8 @@ def _sec(parent, text):
 def _scrollable(parent):
     """
     Scrollable inner frame with a clearly visible scrollbar.
-    Mouse wheel binding is per-canvas — only scrolls when mouse is over this area.
+    Binds mouse wheel to the canvas AND all its children so scrolling
+    works regardless of window size or which child widget the mouse is over.
     """
     canvas = tk.Canvas(parent, bg=BG2, highlightthickness=0)
     sb     = tk.Scrollbar(parent, orient="vertical", command=canvas.yview,
@@ -948,20 +962,34 @@ def _scrollable(parent):
     def _scroll(e):
         canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
 
-    def _enter(_):
-        canvas.bind_all("<MouseWheel>", _scroll)
-        canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
-        canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
+    def _scroll_mac_up(e):
+        canvas.yview_scroll(-1, "units")
 
-    def _leave(_):
-        canvas.unbind_all("<MouseWheel>")
-        canvas.unbind_all("<Button-4>")
-        canvas.unbind_all("<Button-5>")
+    def _scroll_mac_down(e):
+        canvas.yview_scroll(1, "units")
 
-    canvas.bind("<Enter>", _enter)
-    canvas.bind("<Leave>", _leave)
-    inner.bind("<Enter>",  _enter)
-    inner.bind("<Leave>",  _leave)
+    def _bind_scroll(widget):
+        """Recursively bind scroll to widget and all its descendants."""
+        widget.bind("<MouseWheel>", _scroll)
+        widget.bind("<Button-4>",   _scroll_mac_up)
+        widget.bind("<Button-5>",   _scroll_mac_down)
+        widget.bind("<Enter>", lambda e, w=widget: (
+            w.bind("<MouseWheel>", _scroll),
+            w.bind("<Button-4>",   _scroll_mac_up),
+            w.bind("<Button-5>",   _scroll_mac_down),
+        ))
+
+    # Bind to canvas and inner frame
+    _bind_scroll(canvas)
+    _bind_scroll(inner)
+
+    # Re-bind whenever new widgets are added to inner
+    def _on_child_added(e):
+        _bind_scroll(e.widget)
+
+    inner.bind("<Map>", _on_child_added)
+    canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _scroll))
+    canvas.bind("<Leave>", lambda e: canvas.bind_all("<MouseWheel>", lambda ev: None))
 
     return inner
 
@@ -1066,10 +1094,28 @@ class App(tk.Tk):
 
     def _build_ui(self):
         # Header
-        hdr = tk.Frame(self, bg="#111111", pady=12)
+        hdr = tk.Frame(self, bg="#111111", pady=10)
         hdr.pack(fill="x")
         hi  = tk.Frame(hdr, bg="#111111")
         hi.pack(fill="x", padx=24)
+
+        # Logo next to title — 44px with a subtle highlight border to pop on dark bg
+        try:
+            import base64 as _b64, io as _io
+            from PIL import Image as _Img, ImageTk as _ITk, ImageOps as _IOps
+            _data  = _b64.b64decode(_APP_ICON_B64)
+            _img   = _Img.open(_io.BytesIO(_data)).convert("RGBA")
+            # Round the corners by applying circular mask
+            _img   = _img.resize((44, 44), _Img.LANCZOS)
+            self._hdr_logo = _ITk.PhotoImage(_img)
+            # Wrap in a frame with accent border so logo stands out
+            logo_frame = tk.Frame(hi, bg=ACCENT, padx=2, pady=2)
+            logo_frame.pack(side="left", padx=(0, 12))
+            tk.Label(logo_frame, image=self._hdr_logo,
+                     bg=ACCENT).pack()
+        except Exception:
+            pass
+
         tk.Label(hi, text=APP_NAME, font=FONT_L,
                  bg="#111111", fg=FG).pack(side="left")
         tk.Label(hi, text=f"  {APP_VERSION}",
@@ -1131,77 +1177,94 @@ class App(tk.Tk):
     def _build_setup(self):
         inner = _scrollable(self._tab_setup)
 
-        _sec(inner, "About this app")
+        _sec(inner, "What does this app do?")
         about = _card(inner)
         about.pack(fill="x", padx=20, pady=(0, 6))
         tk.Label(about,
                  text=(
-                     "Snapchat Memories Organiser helps you take back control of your Snapchat memories.\n\n"
-                     "When Snapchat exports your data, photos and videos are stripped of overlays, stickers,\n"
-                     "and metadata. Files appear as if created today when imported into Apple Photos or\n"
-                     "Google Photos — not when you actually took them.\n\n"
-                     "This app fixes that by:\n"
-                     "  •  Merging Snapchat filter overlays back onto your photos and videos\n"
-                     "  •  Restoring the original creation date and time from the master JSON\n"
-                     "  •  Embedding GPS coordinates where available\n"
-                     "  •  Producing clean, organised files ready to import anywhere\n\n"
-                     "How matching works:\n"
-                     "  1.  All ZIPs are pre-scanned to find memories_history.json (in ZIP 1).\n"
-                     "       This master file contains exact UTC times and GPS for every memory.\n"
-                     "  2.  Each ZIP's memories_history.html is parsed to get its media files\n"
-                     "       listed by UUID filename in document order.\n"
-                     "  3.  Each UUID is cross-referenced against the master JSON by position —\n"
-                     "       giving a guaranteed correct time and GPS match for every single file,\n"
-                     "       even on days where many memories were taken.\n"
-                     "  4.  If no HTML is found in a ZIP, positional matching by date and type\n"
-                     "       is used as a fallback.\n\n"
-                     "A note on times:\n"
-                     "  Dates are accurate for all years — your memories will always land on the\n"
-                     "  correct day. However, the time of day (hour and minute) can be unreliable,\n"
-                     "  especially for memories before 2019. Snapchat ran on different server\n"
-                     "  infrastructure over the years and did not always store timezone data\n"
-                     "  consistently, so times on older snaps may appear shifted or incorrect.\n"
-                     "  There is no way to fix this — it is a limitation of the original export."
+                     "When you export your Snapchat memories, a few things go wrong:\n\n"
+                     "  •  Filters, stickers, and text overlays are saved as separate files — not merged onto your photos/videos\n"
+                     "  •  All files lose their original date and time — they show up as 'taken today' when you import them\n"
+                     "  •  Location data (GPS) is stored separately and never embedded into the media files\n\n"
+                     "This app fixes all three. It reads through your Snapchat ZIP files and for every memory:\n\n"
+                     "  •  Merges the filter overlay back onto the photo or video\n"
+                     "  •  Restores the correct date and time so your photos sort properly in any gallery app\n"
+                     "  •  Embeds the GPS location into the file so it shows on a map\n\n"
+                     "The result is a folder of properly restored memories, ready to import into Apple Photos,\n"
+                     "Google Photos, or anywhere else you store your media."
                  ),
                  font=FONT_S, bg=CARD, fg=FG2,
                  justify="left", anchor="w", wraplength=860,
                  ).pack(padx=16, pady=14, anchor="w")
 
-        _sec(inner, "How to use this app")
+        _sec(inner, "How does it match the right time to the right file?")
+        match = _card(inner)
+        match.pack(fill="x", padx=20, pady=(0, 6))
+        tk.Label(match,
+                 text=(
+                     "Snapchat stores a list of all your memories with their exact times and GPS in a file\n"
+                     "called memories_history.json. Each ZIP file also has an HTML file that lists the media\n"
+                     "it contains in the same order. This app cross-references the two:\n\n"
+                     "  1.  It reads the master JSON file (found in your first ZIP) — this has the time and\n"
+                     "       GPS for every memory you've ever saved.\n\n"
+                     "  2.  For each ZIP, it reads the HTML file to get the list of media files in order.\n\n"
+                     "  3.  It matches each media file to its entry in the JSON by position — this gives a\n"
+                     "       guaranteed correct time and GPS for every file, even on days with lots of memories.\n\n"
+                     "  4.  If a ZIP has no HTML file, it falls back to matching by date and file type."
+                 ),
+                 font=FONT_S, bg=CARD, fg=FG2,
+                 justify="left", anchor="w", wraplength=860,
+                 ).pack(padx=16, pady=14, anchor="w")
+
+        _sec(inner, "A note on times")
+        tn = _card(inner)
+        tn.pack(fill="x", padx=20, pady=(0, 6))
+        tk.Label(tn,
+                 text=(
+                     "Dates will always be right — your photos will land on the correct day in any gallery app.\n\n"
+                     "Times are a different story. Snapchat has changed its servers and how it stores timezone\n"
+                     "data several times over the years. For older memories (especially before 2019), the hour\n"
+                     "and minute shown might be off. This isn't something this app can fix — it's a limitation\n"
+                     "of the original Snapchat export."
+                 ),
+                 font=FONT_S, bg=CARD, fg=FG2,
+                 justify="left", anchor="w", wraplength=860,
+                 ).pack(padx=16, pady=14, anchor="w")
+
+        _sec(inner, "Steps to get started")
         sc = _card(inner)
         sc.pack(fill="x", padx=20, pady=(0, 6))
         steps = [
-            ("1  Request your Snapchat data",
-             "Go to accounts.snapchat.com → My Data → Export your Memories.\n"
-             "Tick 'Export JSON Files for data portability purposes' then submit.\n"
-             "Snapchat emails you a link — download every ZIP file provided."),
-            ("2  Put all ZIPs in one folder",
-             "Create a folder (e.g. Snapchat ZIPs on your Desktop).\n"
-             "Move all ZIPs into it. Do not extract them — keep them as ZIPs."),
-            ("3  Check all dependencies",
-             "See the Dependencies section below. All four must show Installed.\n"
-             f"Open {'Terminal' if _IS_MAC else 'Command Prompt'} and run the "
-             f"install commands shown for anything missing, then restart this app."),
-            ("4  Go to the Files tab",
-             "Click 'Add a folder of ZIPs', select your ZIPs folder.\n"
-             "Choose an output folder, set your timeout preference, then click Process."),
-            ("5  Monitor progress",
-             "Progress tab shows live stats, progress bars, and estimated time remaining.\n"
-             "Log tab shows full activity detail and any warnings.\n"
-             "Use the Skip button to jump past any video that is taking too long."),
-            ("6  Import your organised memories",
-             "Your output folder contains properly restored media with original timestamps\n"
-             "and GPS. Import into Apple Photos, Google Photos, Android, NAS, or anywhere.\n"
-             "Dates are accurate for all years. Times may vary for older memories."),
+            ("1  Request your data from Snapchat",
+             "Go to accounts.snapchat.com, sign in, then go to My Data → Submit Request.\n"
+             "Make sure 'Export JSON Files for data portability' is ticked.\n"
+             "Snapchat will email you a download link — this can take a few minutes to a few hours."),
+            ("2  Download and keep all the ZIPs together",
+             "Download every ZIP file from the email link (there may be up to 12).\n"
+             "Put them all in one folder on your Desktop. Don't extract them — leave them as ZIPs."),
+            ("3  Install the dependencies below",
+             "Check the Dependencies section. Everything marked Not Installed needs to be set up\n"
+             f"before this app can work. Open {'Terminal' if _IS_MAC else 'Command Prompt'} and run\n"
+             "the commands shown. Restart this app afterwards."),
+            ("4  Add your ZIPs on the Files tab",
+             "Click 'Add a folder of ZIPs' and select the folder containing your ZIPs.\n"
+             "Pick an output folder (an empty folder on your Desktop is ideal), then click Process."),
+            ("5  Watch the progress",
+             "The Progress tab shows what's happening in real time — files saved, overlays applied,\n"
+             "GPS embedded, and an estimated time to completion.\n"
+             "If a video is taking too long, click Skip to move on."),
+            ("6  Import into your gallery",
+             "Once done, your output folder contains your restored memories with correct dates and GPS.\n"
+             "Import into Apple Photos, Google Photos, or copy to your phone or NAS."),
         ]
         for title, detail in steps:
             row = tk.Frame(sc, bg=CARD)
-            row.pack(fill="x", padx=16, pady=6)
+            row.pack(fill="x", padx=16, pady=7)
             tk.Label(row, text=title, font=FONT_B, bg=CARD, fg=FG,
                      anchor="w").pack(fill="x")
             tk.Label(row, text=detail, font=FONT_S, bg=CARD, fg=FG2,
                      justify="left", anchor="w", wraplength=860,
-                     ).pack(fill="x", pady=(2, 0))
+                     ).pack(fill="x", pady=(3, 0))
         tk.Frame(sc, bg=CARD, height=8).pack()
 
         _sec(inner, "Dependencies")
@@ -1209,13 +1272,13 @@ class App(tk.Tk):
         dc.pack(fill="x", padx=20, pady=(0, 6))
         for args in [
             ("Pillow",  PILLOW_OK,  PILLOW_VER,  _INST_PILLOW,
-             "Required — applies Snapchat filter overlays onto photos."),
+             "Merges filter overlays onto photos. Also used to show image previews."),
             ("piexif",  PIEXIF_OK,  None,         _INST_PIEXIF,
-             "Required — embeds GPS and timestamps into JPEG photos."),
+             "Writes the GPS location and timestamp into JPEG photo files."),
             ("ffmpeg",  FFMPEG_OK,  FFMPEG_VER,   _INST_FFMPEG,
-             "Required — applies overlays onto videos and embeds GPS into MP4 files."),
+             "Merges filter overlays onto videos. Also writes GPS into MP4 files."),
             ("ffprobe", FFPROBE_OK, FFPROBE_VER,  _INST_FFPROBE,
-             "Required — reads video dimensions and frame counts."),
+             "Reads video dimensions and length. Comes bundled with ffmpeg."),
         ]:
             _dep_row(dc, *args)
         tk.Frame(dc, bg=CARD, height=8).pack()
@@ -1224,7 +1287,7 @@ class App(tk.Tk):
         nb = tk.Frame(inner, bg=BG2)
         nb.pack(fill="x", padx=20, pady=(0, 24))
         tk.Button(nb, text="Next: Add your files  →",
-                  font=("Segoe UI", 11, "bold"),
+                  font=(_F, 11, "bold"),
                   bg=ACCENT, fg="#000", relief="flat",
                   padx=28, pady=12, cursor="hand2",
                   activebackground=ACCENT2, activeforeground="#000",
@@ -1239,19 +1302,19 @@ class App(tk.Tk):
         fc = _card(inner)
         fc.pack(fill="x", padx=20, pady=(0, 6))
         tk.Label(fc,
-                 text="  Choose one of the options below. You can select multiple ZIPs at once.",
+                 text="  Add all your Snapchat ZIPs — the easiest way is to put them all in one folder and use the first button.",
                  font=FONT_S, bg=CARD, fg=FG2).pack(anchor="w", pady=(12, 8))
 
         btns = tk.Frame(fc, bg=CARD)
         btns.pack(fill="x", padx=14, pady=(0, 10))
         _add_btn(btns, "Add a folder of ZIPs",
-                 "Recommended — finds all ZIPs in the folder automatically",
+                 "Best option — picks up all ZIPs in the folder automatically",
                  self._add_zip_folder, accent=True).pack(side="left", padx=(0, 10))
         _add_btn(btns, "Add individual ZIPs",
-                 "Pick one or more specific ZIP files",
+                 "Choose specific ZIP files one at a time",
                  self._add_zips).pack(side="left", padx=(0, 10))
         _add_btn(btns, "Add an unzipped folder",
-                 "If you have already extracted a ZIP",
+                 "Use this if you've already extracted a ZIP",
                  self._add_folder).pack(side="left")
 
         qhdr = tk.Frame(fc, bg=CARD)
@@ -1276,7 +1339,7 @@ class App(tk.Tk):
         oc.pack(fill="x", padx=20, pady=(0, 6))
         oi = tk.Frame(oc, bg=CARD, pady=12)
         oi.pack(fill="x", padx=14)
-        tk.Label(oi, text="Where do you want to save your organised memories?",
+        tk.Label(oi, text="Where should the organised files be saved?",
                  font=FONT_S, bg=CARD, fg=FG2).pack(anchor="w", pady=(0, 6))
         pr = tk.Frame(oi, bg=CARD)
         pr.pack(fill="x")
@@ -1289,7 +1352,7 @@ class App(tk.Tk):
                   relief="flat", padx=14, pady=6, cursor="hand2",
                   activebackground=BORDER, activeforeground=FG,
                   command=self._browse_out).pack(side="left")
-        tk.Label(oi, text="Tip: choose a new empty folder. A folder on your Desktop works well.",
+        tk.Label(oi, text="Pick a new empty folder — a folder on your Desktop works perfectly.",
                  font=FONT_S, bg=CARD, fg=FG3).pack(anchor="w", pady=(6, 0))
 
         _sec(inner, "Options")
@@ -1299,32 +1362,32 @@ class App(tk.Tk):
         oi2.pack(fill="x", padx=14)
 
         tk.Checkbutton(oi2, variable=self._do_overlay,
-                       text="Apply Snapchat filter overlays onto photos and videos",
+                       text="Merge Snapchat filter overlays onto photos and videos",
                        bg=CARD, fg=FG, selectcolor=BG2,
                        activebackground=CARD, activeforeground=FG,
                        font=FONT, cursor="hand2", highlightthickness=0,
                        ).pack(anchor="w")
         tk.Label(oi2,
-                 text="Uses Pillow for photos and ffmpeg for videos. "
-                      "Disable to skip overlay merging and run faster.",
+                 text="Overlay merging uses Pillow for photos and ffmpeg for videos. "
+                      "Turn this off if you just want the files with correct dates and no overlay.",
                  font=FONT_S, bg=CARD, fg=FG3).pack(anchor="w", pady=(2, 10))
 
         tk.Frame(oi2, bg=BORDER, height=1).pack(fill="x", pady=(0, 10))
 
         tr = tk.Frame(oi2, bg=CARD)
         tr.pack(fill="x", pady=(0, 6))
-        tk.Label(tr, text="ffmpeg hard timeout per video:",
+        tk.Label(tr, text="Max time per video:",
                  font=FONT_S, bg=CARD, fg=FG2).pack(side="left")
         tk.Entry(tr, textvariable=self._timeout_var, bg="#111111", fg=FG,
                  insertbackground=FG, relief="flat", font=FONT,
                  highlightbackground=BORDER, highlightthickness=1,
                  width=5).pack(side="left", padx=(10, 6), ipady=4)
-        tk.Label(tr, text="minutes   (set to 0 for no limit)",
+        tk.Label(tr, text="minutes   (0 = no limit)",
                  font=FONT_S, bg=CARD, fg=FG3).pack(side="left")
         tk.Label(oi2,
-                 text="If a video takes longer than this to encode, the process is killed and\n"
-                      "the original file is saved instead. Use the Skip button in the Progress\n"
-                      "tab to manually skip a specific video during processing.",
+                 text="If a video takes longer than this to process, it gets skipped and the\n"
+                      "original file is saved in its place. You can also skip any video manually\n"
+                      "using the Skip button on the Progress tab.",
                  font=FONT_S, bg=CARD, fg=FG3, justify="left").pack(anchor="w")
 
         tk.Frame(inner, bg=BG2, height=12).pack()
@@ -1332,7 +1395,7 @@ class App(tk.Tk):
         bo.pack(fill="x", padx=20, pady=(0, 24))
         self._start_btn = tk.Button(
             bo, text="Process All ZIPs  →",
-            font=("Segoe UI", 12, "bold"),
+            font=(_F, 12, "bold"),
             bg=ACCENT, fg="#000", relief="flat",
             padx=32, pady=14, cursor="hand2",
             activebackground=ACCENT2, activeforeground="#000",
@@ -1357,11 +1420,11 @@ class App(tk.Tk):
         cr.pack(fill="x", padx=20, pady=(0, 12))
         self._stat_vars = {}
         for key, lbl, tip in [
-            ("zip",      "ZIP",      "Current ZIP"),
-            ("saved",    "Saved",    "Files saved"),
-            ("overlays", "Overlays", "Overlays applied"),
-            ("gps",      "GPS",      "GPS embedded"),
-            ("skipped",  "Skipped",  "Files skipped"),
+            ("zip",      "ZIP",      "Which ZIP is being processed"),
+            ("saved",    "Saved",    "Total files copied to output"),
+            ("overlays", "Overlays", "Files with filter merged"),
+            ("gps",      "GPS",      "Files with location embedded"),
+            ("skipped",  "Skipped",  "Files with no main media"),
         ]:
             c = tk.Frame(cr, bg=CARD,
                          highlightbackground=BORDER, highlightthickness=1)
@@ -1369,10 +1432,10 @@ class App(tk.Tk):
             var = tk.StringVar(value="—")
             self._stat_vars[key] = var
             tk.Label(c, textvariable=var,
-                     font=("Segoe UI", 18, "bold"), bg=CARD, fg=FG
+                     font=(_F, 18, "bold"), bg=CARD, fg=FG
                      ).pack(pady=(14, 2))
             tk.Label(c, text=lbl,  font=FONT_S,           bg=CARD, fg=FG3).pack()
-            tk.Label(c, text=tip,  font=("Segoe UI", 8),
+            tk.Label(c, text=tip,  font=(_F, 8),
                      bg=CARD, fg=FG3, wraplength=110).pack(pady=(0, 12))
 
         _sec(p, "Current file")
@@ -1422,13 +1485,15 @@ class App(tk.Tk):
             state="disabled", command=self._stop_processing)
         self._stop_btn.pack(side="left")
 
-        # Info text below buttons
-        tk.Label(controls_outer,
-                 text="Skip — kills the current ffmpeg video encode, saves original.  "
-                      "Pause — pauses between files, click Resume to continue.  "
-                      "Stop — halts all processing immediately.",
-                 font=("Segoe UI", 8), bg=CARD, fg=FG3,
-                 justify="left", anchor="w").pack(fill="x")
+        # Info text stacked vertically below buttons
+        for desc in [
+            "Skip video — kills the current ffmpeg encode. Original file is saved in its place.",
+            "Pause — pauses after the current file finishes. Click Resume to continue.",
+            "Stop — halts all processing immediately after the current file.",
+        ]:
+            tk.Label(controls_outer, text=desc,
+                     font=(_F, 8), bg=CARD, fg=FG3,
+                     justify="left", anchor="w").pack(fill="x", pady=(1, 0))
 
         _sec(p, "Overall progress")
         pc = _card(p)
@@ -1531,10 +1596,10 @@ class App(tk.Tk):
         note = tk.Frame(p, bg=BG2)
         note.pack(fill="x", padx=20, pady=(4, 12))
         tk.Label(note,
-                 text="Please note: Dates are accurate for all years. Times — especially before 2019 — "
-                      "may appear shifted or incorrect. Snapchat ran on different server infrastructure "
-                      "over the years and did not always store timezone data consistently.",
-                 font=("Segoe UI", 8), bg=BG2, fg=FG3,
+                 text="Dates are accurate for all years. Times — especially for older memories before 2019 — "
+                      "may be slightly off. Snapchat changed how it stored time data over the years, "
+                      "so some older snaps may show the wrong hour. This is a Snapchat export limitation.",
+                 font=(_F, 8), bg=BG2, fg=FG3,
                  justify="left", anchor="w", wraplength=900,
                  ).pack(anchor="w")
 
@@ -1600,7 +1665,7 @@ class App(tk.Tk):
 
                 yr_lbl = tk.Label(yr_hdr,
                                   text=f"{year}",
-                                  font=("Segoe UI", 13, "bold"),
+                                  font=FONT_L,
                                   bg=BG2, fg=ACCENT)
                 yr_lbl.pack(side="left")
 
@@ -1769,13 +1834,14 @@ class App(tk.Tk):
         fi.pack(fill="x", padx=20, pady=6)
         tk.Label(fi,
                  text=f"Made by {APP_AUTHOR}   |   {APP_GITHUB}   |   {APP_DATE}",
-                 font=("Segoe UI", 8), bg="#0a0a0a", fg=FG3).pack(side="left")
+                 font=(_F, 8), bg="#0a0a0a", fg=FG3).pack(side="left")
 
     # ── Queue ─────────────────────────────────────────────────────────────────
 
     def _add_zip_folder(self):
         p = filedialog.askdirectory(
-            title="Select the folder containing your Snapchat ZIPs")
+            title="Select the folder containing your Snapchat ZIPs",
+            initialdir=str(Path.home() / "Desktop"))
         if not p:
             return
         zips  = sorted(Path(p).glob("*.zip"))
@@ -1794,6 +1860,7 @@ class App(tk.Tk):
     def _add_zips(self):
         paths = filedialog.askopenfilenames(
             title="Select Snapchat ZIP files — hold Ctrl or Shift for multiple",
+            initialdir=str(Path.home() / "Desktop"),
             filetypes=[("ZIP files", "*.zip"), ("All files", "*.*")])
         for p in paths:
             path = Path(p)
@@ -1803,7 +1870,8 @@ class App(tk.Tk):
         self._upd_qlabel()
 
     def _add_folder(self):
-        p = filedialog.askdirectory(title="Select an unzipped Snapchat folder")
+        p = filedialog.askdirectory(title="Select an unzipped Snapchat folder",
+            initialdir=str(Path.home() / "Desktop"))
         if p:
             path = Path(p)
             if path not in self._queue:
@@ -1823,7 +1891,9 @@ class App(tk.Tk):
         self._queue_lbl.config(text="No files queued yet")
 
     def _browse_out(self):
-        p = filedialog.askdirectory(title="Select output folder")
+        p = filedialog.askdirectory(
+            title="Select output folder",
+            initialdir=self._out.get() or str(Path.home() / "Desktop"))
         if p: self._out.set(p)
 
     # ── Logging ───────────────────────────────────────────────────────────────
@@ -1909,15 +1979,17 @@ class App(tk.Tk):
             self._grand_lbl.config(
                 text=f"{done:,} of {total:,}  —  {remaining:,} remaining  ({pct}%)")
             if self._start_time and done > 5:
-                elapsed = time.time() - self._start_time
-                rate    = done / elapsed
-                eta_s   = int(remaining / rate) if rate > 0 else 0
+                elapsed   = time.time() - self._start_time
+                # Subtract accumulated pause time from elapsed for accurate rate
+                active    = elapsed - getattr(self, '_pause_elapsed', 0.0)
+                rate      = done / active if active > 1 else 0
+                eta_s     = int(remaining / rate) if rate > 0 else 0
                 h, rem  = divmod(eta_s, 3600)
                 m_t, s  = divmod(rem, 60)
                 eta_txt = (f"{h}h {m_t:02d}m {s:02d}s" if h
                            else f"{m_t}m {s:02d}s" if m_t else f"{s}s")
                 self._eta_var.set(f"Estimated time remaining: {eta_txt}")
-                self._rate_var.set(f"Processing rate: {rate * 60:.1f} files / min")
+                self._rate_var.set(f"Rate:  {rate * 60:.1f} memories / min")
         else:
             self._grand_lbl.config(text=f"{done:,} files processed")
         self.update_idletasks()
@@ -2001,6 +2073,9 @@ class App(tk.Tk):
     def _toggle_pause(self):
         if self._pause_flag.is_set():
             # Currently paused — resume
+            if self._pause_start is not None:
+                self._pause_elapsed += time.time() - self._pause_start
+                self._pause_start = None
             self._pause_flag.clear()
             self._pause_btn.config(text="Pause", bg="#2d2200", fg=WARN_C,
                                     activebackground="#3d3000")
@@ -2009,6 +2084,7 @@ class App(tk.Tk):
             self.after(1500, lambda: self._cur_note.set("") if not self._pause_flag.is_set() else None)
         else:
             # Running — pause
+            self._pause_start = time.time()
             self._pause_flag.set()
             self._pause_btn.config(text="Resume", bg="#1a2d00", fg=OK,
                                     activebackground="#253d00")
@@ -2082,7 +2158,7 @@ class App(tk.Tk):
 
         self._start_btn.config(state="disabled", bg=FG3, text="Processing...")
         self._start_note.config(
-            text="Switch to the Progress or Log tab to monitor.")
+            text="Switched to Progress tab — monitor live stats there.")
         self._skip_btn.config(state="disabled", text="Skip video")
         self._pause_btn.config(state="disabled", text="Pause",
                                 bg="#2d2200", fg=WARN_C)
@@ -2093,6 +2169,8 @@ class App(tk.Tk):
         self._grand_overlays = 0
         self._grand_gps      = 0
         self._grand_skipped  = 0
+        self._pause_elapsed  = 0.0   # total seconds spent paused
+        self._pause_start    = None  # when current pause began
         self._summary        = {}
         self._summary_year_frames = {}
         # Clear and rebuild summary tab
@@ -2103,8 +2181,6 @@ class App(tk.Tk):
             text="Processing — summary will appear here as memories are saved.",
             font=FONT_S, bg=BG2, fg=FG3, justify="center")
         self._summary_placeholder.pack(pady=60)
-        # {year: {month: {"photos": 0, "videos": 0, "gps": 0}}}
-        self._summary        = {}
         for key in self._stat_vars:
             self._stat_vars[key].set("—")
         self._elapsed_var.set("Starting...")
@@ -2167,8 +2243,8 @@ class App(tk.Tk):
                 self._safe_log(f"{'─'*62}", "dim")
 
                 self._gui_q.put(("reset_skip_btn", None))
-                self._pause_btn.config(state="normal")   # enable pause for this ZIP
-                self._stop_btn.config(state="normal")    # enable stop
+                self.after(0, lambda: self._pause_btn.config(state="normal"))
+                self.after(0, lambda: self._stop_btn.config(state="normal"))
                 self._kill_flag.clear()
 
                 matched, ovs, skipped, gps, failed = process_zip(
@@ -2190,23 +2266,23 @@ class App(tk.Tk):
                 self._kill_flag.clear()
                 all_failed.extend(failed)
 
+                grand_matched  += matched
+                grand_overlays += ovs
+                grand_skipped  += skipped
+                grand_gps      += gps
+
                 # Check if stop was requested between ZIPs
                 if self._stop_flag.is_set():
                     self._safe_log(
                         f"\n  Stopped after ZIP {zi} — remaining ZIPs skipped.", "dim")
                     break
 
-                grand_matched  += matched
-                grand_overlays += ovs
-                grand_skipped  += skipped
-                grand_gps      += gps
-
                 self._safe_log(
                     f"\n  ZIP {zi} done — {matched} saved, {ovs} overlays, "
                     f"{gps} GPS, {skipped} skipped.\n", "ok")
 
             self.after(0, lambda: self._skip_btn.config(
-                state="disabled", text="Skip this video"))
+                state="disabled", text="Skip video"))
 
             # Failed files summary
             if all_failed:
@@ -2230,21 +2306,24 @@ class App(tk.Tk):
                             self._safe_warn(
                                 f"  GPS     : {e['lat']}, {e['lon']}")
 
-            # Final summary
+            # Final summary — use self._grand_saved for live count (correct even mid-stop)
             was_stopped = self._stop_flag.is_set()
-            zips_done   = zi  # how many ZIPs were actually processed
+            live_saved  = self._grand_saved
+            zips_done   = zi
             if was_stopped:
                 summary_txt = (f"Stopped after {zips_done} of {total_zips} "
                                f"ZIP{'s' if total_zips != 1 else ''} — "
-                               f"{grand_matched:,} memories saved so far.")
+                               f"{live_saved:,} memories saved.")
             else:
                 summary_txt = (f"All {total_zips} "
                                f"ZIP{'s' if total_zips != 1 else ''} processed.")
-            self._safe_cur("Complete!" if not was_stopped else "Stopped.", summary_txt)
+            complete_label = ("Stopped." if was_stopped
+                              else f"Complete — {live_saved:,} memories saved!")
+            self._safe_cur(complete_label, summary_txt)
             self._safe_log(f"\n{'='*62}", "dim")
             self._safe_log(
                 f"  {'Stopped' if was_stopped else 'All done'}!\n"
-                f"  {grand_matched:,} memories organised\n"
+                f"  {live_saved:,} memories saved\n"
                 f"  {grand_overlays:,} overlays applied\n"
                 f"  {grand_gps:,} GPS tags embedded\n"
                 f"  {grand_skipped:,} skipped", "ok")
