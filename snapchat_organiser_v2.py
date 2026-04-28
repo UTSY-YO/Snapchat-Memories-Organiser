@@ -976,10 +976,22 @@ class App(tk.Tk):
         self._start_time  = None
 
         self._build_ui()
+        self._fit_window(min_w=960, min_h=720)
+
+    def _fit_window(self, min_w, min_h, max_w=None, max_h=None):
+        """
+        Size the window to fit its content, then centre on screen.
+        Works on Mac and Windows at any DPI or font scale.
+        """
         self.update_idletasks()
-        w, h = 1020, 780
-        x = (self.winfo_screenwidth()  - w) // 2
-        y = (self.winfo_screenheight() - h) // 2
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        cap_w = max_w or int(sw * 0.92)
+        cap_h = max_h or int(sh * 0.90)
+        w = max(min_w, min(self.winfo_reqwidth(),  cap_w))
+        h = max(min_h, min(self.winfo_reqheight(), cap_h))
+        x = (sw - w) // 2
+        y = max(30, (sh - h) // 2)
         self.geometry(f"{w}x{h}+{x}+{y}")
 
     def _build_ui(self):
