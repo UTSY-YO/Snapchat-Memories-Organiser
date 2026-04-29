@@ -1,172 +1,185 @@
 # Snapchat Memories Organiser
 
-**Made by [UTSY-YO](https://github.com/UTSY-YO) · April 2026**
-
-A Python desktop app that helps you take back control of your Snapchat memories. As Snapchat increasingly moves storage behind paid services, this tool makes it easy to preserve your memories locally and migrate them to your own devices or cloud platforms.
+**By [UTSY-YO](https://github.com/UTSY-YO) · 2026**
 
 ---
 
-## The Problem
+When you export your Snapchat memories, three things go wrong:
 
-When you request your Snapchat Memories export, Snapchat provides ZIP files containing raw media and separate overlay assets. This creates several problems:
+1. Filter overlays (stickers, text, drawings) are saved as separate files — not merged onto your photos and videos
+2. Every file loses its original date and time — they all appear as "taken today" when you import them
+3. GPS location is stored in a separate file and never embedded into the media
 
-- Photos and videos are exported **without Snapchat text, stickers, drawings, or GIF overlays**
-- Overlay elements are stored **separately** from the original media
-- The **original creation date and time is missing** from the files themselves
-- Importing into Apple Photos, Google Photos, or any gallery app makes everything appear as if it was **created today**
+This app fixes all three.
 
 ---
 
-## What This App Does
+## What it does
 
-Snapchat Memories Organiser automatically processes your exported Snapchat data to fix all of the above:
+For every memory in your Snapchat export, this app:
 
-- **Merges overlays** back onto photos and videos (filters, stickers, text)
-- **Restores original timestamps** from the master JSON export file
-- **Embeds GPS coordinates** where available
-- **Organises output files** with clean, date-based filenames
-- **Live progress tracking** with per-file stats, ETA, and a memories summary by year and month
+- **Merges the filter overlay** back onto the photo or video using Pillow (images) and ffmpeg (videos)
+- **Restores the original date and time** by cross-referencing the HTML file in each ZIP against the master JSON — giving a guaranteed correct match even on days where you took many snaps
+- **Embeds the GPS location** into the file so it shows correctly on a map in Apple Photos or Google Photos
+- **Names each file** using its date and time (`2022-08-06_14-32-11_photo.jpg`) so everything sorts correctly
+
+The result is a folder of properly restored memories, ready to import anywhere.
+
+---
+
+## A note on times
+
+**Dates are always accurate.** Your memories will land on the correct day in any gallery app.
+
+Times are less reliable, especially for older memories (pre-2019). Snapchat changed how it stored timezone data several times over the years, so the hour and minute shown may be off for older snaps. This is a limitation of the original Snapchat export — it can't be corrected.
 
 ---
 
 ## Requirements
 
-### Python
-Python 3.9 or newer — [python.org](https://www.python.org/downloads/)
+You need Python 3.8 or newer, plus four additional tools. See platform-specific instructions below.
 
-### Python packages
+### Windows
+
 ```
+# Install Python
+Download from https://python.org and run the installer.
+Tick "Add Python to PATH" during installation.
+
+# Install Python packages
 pip install Pillow piexif
+
+# Install ffmpeg (adds ffmpeg and ffprobe)
+winget install ffmpeg
+
+# Restart Command Prompt after installing ffmpeg, then verify:
+ffmpeg -version
 ```
 
-### ffmpeg + ffprobe
-Required for video overlay compositing and MP4 metadata embedding.
+### macOS
 
-| Platform | Install |
-|----------|---------|
-| Windows  | `winget install ffmpeg` |
-| macOS    | `brew install ffmpeg` |
-| Linux    | `sudo apt install ffmpeg` |
+```
+# Python comes with macOS, but for the latest version use:
+brew install python     # or download from python.org
 
-After installing ffmpeg, restart the app so it is detected on your PATH.
+# Install Python packages
+pip3 install Pillow piexif
 
----
+# Install ffmpeg via Homebrew (get Homebrew at brew.sh if you don't have it)
+brew install ffmpeg
 
-## Installation
-
-1. Download `snapchat_organiser_v2.py`
-2. Install dependencies (see above)
-3. Run:
-
-```bash
-python snapchat_organiser_v2.py
+# Verify:
+ffmpeg -version
 ```
 
-No installation required — it runs directly from the script.
+### Linux (Ubuntu/Debian)
+
+```
+# Install Python and tkinter (tkinter is not always bundled on Linux)
+sudo apt update
+sudo apt install python3 python3-pip python3-tk
+
+# Install Python packages
+pip3 install Pillow piexif
+
+# Install ffmpeg
+sudo apt install ffmpeg
+
+# Verify:
+ffmpeg -version
+```
 
 ---
 
-## How to Use
+## Running the app
 
-### Part 1 — Downloading Your Data from Snapchat
+```
+python snapchat_organiser_v2.py       # Windows
+python3 snapchat_organiser_v2.py      # Mac / Linux
+```
 
-> ⏳ Snapchat can take **up to 24 hours** to prepare your export. Do this first and come back once the email arrives.
-
-**Step 1 — Request your export**
-1. Go to [accounts.snapchat.com](https://accounts.snapchat.com) and sign in, then click **My Data**
-2. Under *Select data to include*, tick **both** of the following:
-   - ✅ **Export your Memories**
-   - ✅ **Export JSON Files** *(for data portability purposes)*
-3. Click **Next**
-4. You will be prompted to select a **date range** — choose **All Time** so every memory is included
-5. **Confirm your email address** in the field provided
-6. Click **Submit**
-
-**Step 2 — Wait for the email**
-
-Snapchat will send an email from *Team Snapchat* with the subject **"Your Snapchat data is ready for download"**. Click the link inside — it will direct you back to [accounts.snapchat.com](https://accounts.snapchat.com) → **My Data**.
-
-**Step 3 — Download all ZIP files**
-1. Under **Your exports**, click **See exports**
-2. You will see a list of ZIP files (e.g. `mydata~....zip`, `mydata~...-2.zip`, up to 12 files, each up to 2 GB)
-3. Download **every ZIP file** to your **Downloads** folder
-4. Once all ZIPs are downloaded, create a new folder (e.g. `Snapchat ZIPs` on your Desktop) and move all the ZIPs into it — **do not extract them**
-
-> 💡 Make sure you have enough free disk space before downloading. The full export can exceed 20 GB.
+No installation needed — just run the script directly.
 
 ---
 
-### Part 2 — Processing with the App
+## How to use it
 
-**Step 4 — Open the app and go to the Files tab**
-- Click **Add a folder of ZIPs** and select your ZIPs folder
-- Choose an output folder where your organised memories will be saved
-- Adjust options if needed (overlays, ffmpeg timeout)
+### Step 1 — Request your Snapchat data
+
+1. Go to [accounts.snapchat.com](https://accounts.snapchat.com) and sign in
+2. Go to **My Data** → **Submit Request**
+3. Make sure **"Export JSON Files for data portability purposes"** is ticked
+4. Submit the request — Snapchat will email you a download link (can take minutes to hours)
+5. Download **every ZIP file** from the email link (there may be up to 12)
+
+### Step 2 — Keep all ZIPs together
+
+Put all the downloaded ZIPs in one folder — for example, `Snapchat ZIPs` on your Desktop.
+**Do not extract them.** Leave them as ZIP files.
+
+### Step 3 — Open the app
+
+Run the script. The **Setup tab** will show whether all dependencies are installed.
+If anything shows as Not Installed, run the relevant command and restart the app.
+
+### Step 4 — Add your ZIPs
+
+Go to the **Files tab**:
+- Click **Add a folder of ZIPs** and select the folder containing your ZIPs
+- Choose an **output folder** (a new empty folder on your Desktop works well)
+- Leave the overlay option on unless you want files without filters applied
 - Click **Process All ZIPs**
 
-**Step 5 — Wait for processing**
+### Step 5 — Monitor progress
 
-Switch to the **Progress tab** to monitor live stats, progress bars, and ETA. Use the **Skip** button to jump past any video taking too long.
+The app switches to the **Progress tab** automatically. You'll see:
+- Live counts: memories saved, overlays applied, GPS embedded
+- Progress bars for the overall run and per-ZIP
+- A per-video encoding bar when ffmpeg is active
+- Estimated time remaining
 
-**Step 6 — Import your memories**
+**Controls:**
+- **Skip video** — kills the current ffmpeg video encode immediately. The original file is saved in its place.
+- **Pause** — pauses after the current file finishes. Click Resume to continue.
+- **Stop** — halts all processing after the current file. Files already saved are kept.
 
-Your output folder contains properly restored media — import into Apple Photos, Google Photos, Android galleries, NAS storage, or anywhere you choose.
+### Step 6 — Import your memories
 
----
-
-## ZIP Structure
-
-Snapchat exports your data across multiple ZIPs:
-
-```
-mydata.zip          ← ZIP 1: contains HTML + JSON master files + 2016–2018 media
-mydata-2.zip        ← ZIPs 2–12: media files only
-mydata-3.zip
-...
-mydata-12.zip
-```
-
-The master `memories_history.json` in ZIP 1 covers **all memories across all ZIPs**. The app pre-scans everything before touching any media.
+Your output folder contains restored media files with correct dates, times, and GPS.
+Import into Apple Photos, Google Photos, copy to your phone, upload to a NAS — whatever you prefer.
 
 ---
 
-## How Matching Works
+## How matching works
 
-Getting the right timestamp and GPS onto the right file is the hardest part of this problem. Here is exactly how it is done:
+Getting the right timestamp and GPS onto the right file is the hardest part of this problem.
 
-1. **Pre-scan** — all ZIPs are scanned to find `memories_history.json`. This master file contains exact UTC times and GPS for every memory across all ZIPs.
+Snapchat stores a master file called `memories_history.json` in your first ZIP. It contains the exact UTC time and GPS for every memory you've ever saved. Each ZIP also contains a `memories_history.html` that lists the media files it contains — in the same order as the JSON.
 
-2. **HTML parsing** — each ZIP contains a `memories_history.html` listing its media files by UUID filename in document order.
+The app cross-references these:
 
-3. **Cross-reference** — each UUID from the HTML is matched to its position in the master JSON. Both are in the same chronological order, so `HTML entry N = JSON entry N = correct time + GPS`. This is guaranteed correct for every file, even on days where many memories were taken.
-
-4. **Fallback** — if no HTML is found in a ZIP, positional matching by date and media type is used instead.
+1. Reads the master JSON to get times and GPS for all memories
+2. Parses each ZIP's HTML to get its media files in order
+3. Matches each media file to its JSON entry by position — guaranteed correct for every file, even on days with many memories
+4. Falls back to matching by date and file type if a ZIP has no HTML
 
 ---
 
-## Output Filenames
+## Output filenames
 
-Files are named using their UTC timestamp from the JSON:
+Files are named by their UTC timestamp from the JSON:
 
 ```
 2019-06-13_04-32-07_photo.jpg
-2019-06-13_06-15-22_video.mp4
-2019-06-13_06-15-22_video_001.mp4   ← collision handled automatically
+2022-08-06_14-10-22_video.mp4
+2022-08-06_14-10-22_video_001.mp4   ← collision handled automatically
 ```
 
-Windows Explorer, Google Photos, and Apple Photos all convert UTC to your local timezone for display automatically.
+Apple Photos, Google Photos, and Windows Explorer all display these times converted to your local timezone automatically.
 
 ---
 
-## Note on Timestamps
-
-**Dates are accurate for all years.**
-
-Times (UTC) may be inconsistent for some memories — Snapchat has changed how it stored timezones over time and early exports did not always record times accurately. This is a Snapchat export limitation, not a bug in this app.
-
----
-
-## Memories Summary Tab
+## Memories Summary tab
 
 A live breakdown of your memories by year and month, updating as each file is processed:
 
@@ -174,37 +187,49 @@ A live breakdown of your memories by year and month, updating as each file is pr
 |-------|--------|--------|-------|-----|
 | Jan   | 12     | 23     | 35    | 18  |
 | Feb   | 45     | 67     | 112   | 54  |
-| **Total** | **312** | **535** | **847** | **201** |
+| **Total** | **57** | **90** | **147** | **72** |
 
-GPS counts are highlighted in green when coordinates were successfully embedded.
-
----
-
-## Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| Apply overlays | On | Composite Snapchat filter overlays onto photos and videos. Disable to run faster. |
-| ffmpeg timeout | 10 min | Kill and skip any video that takes longer than this to encode. Set to 0 for no limit. |
+GPS counts are shown in green when coordinates were embedded.
 
 ---
 
 ## Troubleshooting
 
-**"Some dependencies missing" in the header**
-Install the missing packages shown on the Setup tab and restart the app.
+**"Some dependencies missing" shown at the top**
+Run the install commands in the Setup tab and restart the app. The app checks for Pillow, piexif, ffmpeg, and ffprobe each time it starts.
 
-**Videos saved without overlay**
-ffmpeg is not installed or not on your PATH — see Requirements above.
+**Videos saved without the filter overlay**
+ffmpeg is either not installed or not on your PATH. Install it using the commands above, then restart.
 
-**GPS not embedded for some files**
-Snapchat records `0.0, 0.0` for memories where location was off or unavailable. These are intentionally skipped.
+**GPS not embedded on some files**
+Snapchat records `0, 0` for memories where location was off or not recorded — these are skipped intentionally. Only memories with real GPS data get embedded coordinates.
 
-**Files show today's date after import**
-Make sure you are importing into an app that reads EXIF/MP4 metadata (Google Photos, Apple Photos). Some apps ignore embedded timestamps.
+**All files show today's date after import**
+Make sure you're importing into an app that reads EXIF and MP4 metadata. Google Photos and Apple Photos both do this correctly. Some basic file managers don't.
 
-**Processing seems stuck on a video**
-Use the **Skip** button on the Progress tab to kill the current encode and move on.
+**A video is taking very long**
+Click **Skip video** on the Progress tab. The original file will be saved and the app moves on to the next one. You can also set a timeout (in minutes) on the Files tab so this happens automatically.
+
+**tkinter error on Linux**
+Run `sudo apt install python3-tk` and try again.
+
+**Files tab shows no ZIPs after adding a folder**
+Make sure the ZIPs haven't been extracted. The app expects `.zip` files, not extracted folders (unless you use the "Add an unzipped folder" option).
+
+---
+
+## Platform notes
+
+| | Windows | macOS | Linux |
+|---|---|---|---|
+| Creation time set | ✓ (Win32 API) | ✗ (mtime only) | ✗ (mtime only) |
+| Modification time set | ✓ | ✓ | ✓ |
+| GPS in JPEG | ✓ | ✓ | ✓ |
+| GPS in MP4 | ✓ | ✓ | ✓ |
+| Filter overlay on photos | ✓ | ✓ | ✓ |
+| Filter overlay on videos | ✓ | ✓ | ✓ |
+
+On macOS and Linux, the modification time (not creation time) is set. Apple Photos and Google Photos read modification time when importing, so your memories will still sort correctly.
 
 ---
 
@@ -214,4 +239,4 @@ MIT — free to use, modify, and distribute.
 
 ---
 
-*Made by [UTSY-YO](https://github.com/UTSY-YO) · April 2026*
+*Made by [UTSY-YO](https://github.com/UTSY-YO) · 2026*
